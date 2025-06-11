@@ -1,9 +1,12 @@
+# Existing dependencies
 beautifulsoup4
 markdownify
 fastapi
 uvicorn
 python-dotenv
-langchain-google-genai
 langchain
-langchain-communitypinecone-client
+langchain-google-generativeai
+
+# New dependencies for Pinecone
+pinecone-client
 langchain-pinecone
