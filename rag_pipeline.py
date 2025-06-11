@@ -1,15 +1,13 @@
 import os
 import base64
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-# from langchain_community.vectorstores import Chroma
+from langchain_google_genai import GoogleGenerativeAIEmbeddings # Remove ChatGoogleGenerativeAI from here
 from langchain_pinecone import PineconeVectorStore
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 
-# Import the Pinecone client to ensure environment variables are picked up if needed
-from pinecone import Pinecone # ADD THIS LINE
+from pinecone import Pinecone
 
 load_dotenv()
 
@@ -40,15 +38,15 @@ Answer:""",
     input_variables=["context", "question"],
 )
 
-_qa_chain = None
-_llm = None
-_retriever = None
+# _qa_chain = None # This will now be initialized by the returned retriever and LLM from startup_event
+# _llm = None      # LLM moved to api.py startup
+_retriever = None # Keep this global for now, or pass it around
 
-def initialize_rag_components():
-    global _qa_chain, _llm, _retriever
+def initialize_rag_retriever_only(): # Renamed the function
+    global _retriever
 
-    if _qa_chain is not None:
-        return _qa_chain, _llm, _retriever
+    if _retriever is not None: # Check if retriever is already initialized
+        return _retriever
 
     print(f"⏳ Initializing Google embedding model: {GOOGLE_EMBEDDING_MODEL}...")
     try:
@@ -59,49 +57,29 @@ def initialize_rag_components():
 
     print(f"⏳ Connecting to Pinecone index: {PINECONE_INDEX_NAME}...")
     try:
-        # Initialize Pinecone client first to ensure env vars are picked up by Pinecone
-        # The Pinecone class will automatically look for PINECONE_API_KEY and PINECONE_ENVIRONMENT
-        pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT) # Initialize Pinecone client
+        pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
         
-        # Now pass the initialized embedding model and index name to PineconeVectorStore
-        # The 'environment' argument is no longer needed here if Pinecone client is initialized globally or picked up
         vectorstore = PineconeVectorStore(
             index_name=PINECONE_INDEX_NAME,
-            embedding=embeddings_model # REMOVE ', environment=PINECONE_ENVIRONMENT' from this line
+            embedding=embeddings_model
         )
         
         print("✅ Connected to Pinecone.")
     except Exception as e:
         raise RuntimeError(f"Error connecting to Pinecone: {e}. Ensure API keys and index name are correct, and the index exists.")
 
-    print(f"⏳ Initializing Google LLM: {GOOGLE_LLM_MODEL}...")
-    try:
-        _llm = ChatGoogleGenerativeAI(model=GOOGLE_LLM_MODEL, temperature=0.2)
-        print("✅ Google LLM loaded.")
-    except Exception as e:
-        raise RuntimeError(f"Error initializing Google LLM: {e}. Check GOOGLE_API_KEY and internet connection.")
-
     _retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-
-    _qa_chain = RetrievalQA.from_chain_type(
-        llm=_llm,
-        chain_type="stuff",
-        retriever=_retriever,
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": CUSTOM_QA_PROMPT}
-    )
-
-    return _qa_chain, _llm, _retriever
+    
+    return _retriever # Only return the retriever now
 
 
-def query_rag_system(question: str, image_data_base64: str = None):
+def query_rag_system(question: str, image_data_base64: str = None, qa_chain_instance=None): # Added qa_chain_instance
     """
     Queries the RAG system with a given question and optional image.
+    Requires an initialized qa_chain_instance to be passed.
     """
-    global _qa_chain, _llm, _retriever
-
-    if _qa_chain is None:
-        _qa_chain, _llm, _retriever = initialize_rag_components()
+    if qa_chain_instance is None:
+        raise RuntimeError("RAG chain (qa_chain_instance) not provided to query_rag_system.")
 
     if image_data_base64:
         print("Image attachment detected in query_rag_system. Note: Current RAG chain primarily handles text retrieval.")
@@ -109,7 +87,7 @@ def query_rag_system(question: str, image_data_base64: str = None):
 
     print(f"Querying RAG system with question: {question}")
 
-    response = _qa_chain.invoke({"query": question})
+    response = qa_chain_instance.invoke({"query": question}) # Use the passed instance
 
     answer = response.get("result")
     source_documents = response.get("source_documents", [])

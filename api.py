@@ -1,15 +1,22 @@
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware # <--- ADD THIS IMPORT
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import base64
 from typing import List, Dict
 import asyncio
 import os
+# from dotenv import load_dotenv # Assuming rag_pipeline.py handles this
 
 # Import your refactored RAG pipeline module
-from rag_pipeline import initialize_rag_components, query_rag_system
+from rag_pipeline import initialize_rag_retriever_only, query_rag_system # Changed import
+
+# Import ChatGoogleGenerativeAI here
+from langchain_google_genai import ChatGoogleGenerativeAI # ADD THIS LINE
+from langchain.chains import RetrievalQA # ADD THIS LINE (already imported, just for clarity)
+from langchain.prompts import PromptTemplate # ADD THIS LINE (already imported, just for clarity)
+
 
 # --- FastAPI App Setup ---
 app = FastAPI(
@@ -19,28 +26,24 @@ app = FastAPI(
 
 # --- CORS Middleware ---
 # Define the origins that are allowed to access your API
-# It's crucial to include your Vercel domains here.
-# For maximum compatibility during debugging, you can use allow_origins=["*"]
-# but for production, list specific domains.
 origins = [
     "http://localhost:3000",  # Your local frontend development server
     "http://localhost:8000",  # If you run FastAPI locally on this port
     "https://tds-virtual-ta.vercel.app", # Your main Vercel domain
-    # Add any Vercel preview/branch domains that might be generated
-    # You can find these in your Vercel dashboard under "Domains" for each deployment
+    # Add any Vercel preview/branch domains that might be generated dynamically.
+    # You might consider using a dynamic origin check for production if needed,
+    # but explicitly listing them is safer for Vercel deployments.
     "https://tds-virtual-ta-git-main-pruthvi-prasad-ss-projects.vercel.app",
-    # You might also see domains like:
-    # "https://tds-virtual-ta-two.vercel.app",
-    # "https://tds-virtual-at4177a3m-pruthvi-prasad-ss-projects.vercel.app", # Example from your earlier logs
-    # Add any other specific Vercel domains you are testing from
+    "https://tds-virtual-ta-two.vercel.app", # As seen in previous logs
+    # Add any other specific Vercel domains you are testing from here
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all HTTP methods (GET, POST, PUT, DELETE, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 # --- END CORS Middleware ---
 
@@ -62,9 +65,23 @@ class ApiResponse(BaseModel):
     links: List[Link]
 
 # --- Global variable to hold initialized RAG components ---
-rag_chain = None
+# rag_chain = None # No longer global in api.py, will be passed to query_rag_system
 llm_instance = None
 retriever_instance = None
+qa_chain_global = None # New global to hold the initialized QA chain
+
+# IMPORTANT: Re-define CUSTOM_QA_PROMPT here as it's used directly in api.py now
+CUSTOM_QA_PROMPT = PromptTemplate(
+    template="""You are a helpful assistant for university students. Your task is to answer questions based *only* on the provided context and any image provided.
+If the context or image does not contain enough information to answer the question, or if you cannot find the answer, please politely state "I am sorry, but I do not have enough information in my knowledge base or the provided image to answer that question." Do not try to make up an answer.
+
+Context:
+{context}
+
+Question: {question}
+Answer:""",
+    input_variables=["context", "question"],
+)
 
 
 @app.on_event("startup")
@@ -72,40 +89,57 @@ async def startup_event():
     """
     Initializes the RAG components when the FastAPI application starts up.
     """
-    global rag_chain, llm_instance, retriever_instance
+    global llm_instance, retriever_instance, qa_chain_global # Updated globals
     print("API Startup: Initializing RAG components...")
     try:
-        # Load environment variables (already done by dotenv in rag_pipeline)
-        # We ensure it's loaded before accessing os.getenv
-        # No need to call load_dotenv() directly in api.py if rag_pipeline does it,
-        # but it doesn't hurt to ensure it's loaded before `initialize_rag_components`.
-        # if not os.getenv("GOOGLE_API_KEY"):
-        #     raise ValueError("GOOGLE_API_KEY environment variable not set. Please set it before running.")
+        # Step 1: Initialize retriever (synchronously)
+        retriever_instance = await asyncio.to_thread(initialize_rag_retriever_only) # Changed function call
+        print("API Startup: Retriever initialized successfully.")
 
-        # Call the initialization function from your rag_pipeline module
-        rag_chain, llm_instance, retriever_instance = await asyncio.to_thread(initialize_rag_components)
-        print("API Startup: RAG components initialized successfully.")
+        # Step 2: Initialize LLM (asynchronously)
+        print(f"⏳ Initializing Google LLM: {os.getenv('GOOGLE_LLM_MODEL')}...")
+        llm_instance = ChatGoogleGenerativeAI(model=os.getenv("GOOGLE_LLM_MODEL"), temperature=0.2) # Use os.getenv
+        print("✅ Google LLM loaded.")
+
+        # Step 3: Initialize RetrievalQA chain
+        qa_chain_global = RetrievalQA.from_chain_type(
+            llm=llm_instance,
+            chain_type="stuff",
+            retriever=retriever_instance,
+            return_source_documents=True,
+            chain_type_kwargs={"prompt": CUSTOM_QA_PROMPT}
+        )
+        print("API Startup: RetrievalQA chain initialized successfully.")
+
+        print("API Startup: All RAG components initialized successfully.")
     except Exception as e:
         print(f"API Startup Error: Failed to initialize RAG components: {e}")
-        # Re-raising for Vercel to show critical error during startup
         raise HTTPException(status_code=500, detail=f"Server failed to initialize RAG system: {e}")
+
 
 # --- NEW ROOT ENDPOINT to serve your HTML ---
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     """Serves the main chatbot HTML page."""
-    with open("static/index.html", "r", encoding="utf-8") as f:
-        html_content = f.read()
-    return HTMLResponse(content=html_content)
+    try:
+        with open("static/index.html", "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Frontend HTML file not found. Ensure 'static/index.html' exists.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading HTML file: {e}")
+
 
 # Your existing API endpoint for questions
-@app.post("/api/", response_model=ApiResponse) # Frontend likely calls this path
+@app.post("/api/", response_model=ApiResponse)
 async def ask_question(request_data: QuestionRequest):
     """
     Receives a student question and optional image, returns an answer and relevant links.
     """
-    if rag_chain is None:
-        # This will be caught by the client-side error handling if startup failed
+    global qa_chain_global # Declare global to access the initialized chain
+
+    if qa_chain_global is None: # Check the new global var
         raise HTTPException(status_code=503, detail="RAG system is still initializing or failed to initialize.")
 
     # Validate input
@@ -117,9 +151,11 @@ async def ask_question(request_data: QuestionRequest):
         print("Image attachment detected.")
 
     try:
+        # Pass the initialized QA chain to query_rag_system
         rag_response = await query_rag_system(
             question=request_data.question,
-            image_data_base64=request_data.image
+            image_data_base64=request_data.image,
+            qa_chain_instance=qa_chain_global # Pass the initialized chain
         )
 
         answer = rag_response["answer"]
@@ -156,6 +192,7 @@ async def ask_question(request_data: QuestionRequest):
 @app.get("/health")
 async def health_check():
     """Checks if the API and RAG components are ready."""
-    if rag_chain is None:
+    global qa_chain_global # Declare global to access the initialized chain
+    if qa_chain_global is None: # Check the new global var
         return Response(status_code=503, content="RAG system not ready")
     return Response(status_code=200, content="API and RAG system are ready")
