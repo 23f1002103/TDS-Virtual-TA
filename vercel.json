@@ -6,6 +6,10 @@
       "config": {
         "runtime": "python3.9"
       }
+    },
+    {
+      "src": "static/**", 
+      "use": "@vercel/static-build" 
     }
   ],
   "routes": [
@@ -14,12 +18,8 @@
       "dest": "/api/$1"
     },
     {
-      "src": "/static/(.*)",
-      "dest": "/static/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/static/index.html"
+      "src": "/(.*)", 
+      "dest": "/static/$1" 
     }
   ]
 }
