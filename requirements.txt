@@ -1,8 +1,5 @@
-# Prioritize langchain first
-langchain==0.1.20  # Try 0.1.0 or 0.1.20, check PyPI for recent stable
-langchain-google-generativeai
-
-# Other dependencies (ensure they are on separate lines)
+langchain==0.1.20
+langchain-google-generativeai==0.0.35
 beautifulsoup4
 markdownify
 fastapi
