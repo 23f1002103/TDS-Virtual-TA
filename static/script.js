@@ -4,7 +4,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendButton = document.getElementById('sendButton');
     const chatHistory = document.getElementById('chatHistory');
 
-    const API_ENDPOINT = 'http://127.0.0.1:8000/api/'; // Your FastAPI API endpoint
+    // CHANGE THIS LINE: Use a relative path for the API endpoint
+    const API_ENDPOINT = '/api/'; // This will correctly point to your FastAPI endpoint on Vercel
 
     // Function to append messages to chat history
     function displayMessage(message, type, imageUrl = null) {
@@ -20,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const textNode = document.createElement('div');
         textNode.innerHTML = message; // Use innerHTML for links
         msgElement.appendChild(textNode);
-        
+
         chatHistory.appendChild(msgElement);
         chatHistory.scrollTop = chatHistory.scrollHeight; // Scroll to bottom
     }
@@ -38,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Display user message immediately
         const userImageUrl = imageFile ? URL.createObjectURL(imageFile) : null;
         displayMessage("You: " + question, "user", userImageUrl);
-        
+
         // Add a loading indicator
         const loadingElement = document.createElement('div');
         loadingElement.className = 'chat-message ta loading-indicator';
@@ -67,12 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // --- MODIFIED SECTION END ---
 
         try {
-            const response = await fetch(API_ENDPOINT, {
+            const response = await fetch(API_ENDPOINT, { // API_ENDPOINT is now '/api/'
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(requestBody) // Use the dynamically constructed requestBody
+                body: JSON.stringify(requestBody)
             });
 
             const data = await response.json();
@@ -85,7 +86,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.links && data.links.length > 0) {
                     let linksHtml = 'Sources:<ul>';
                     data.links.forEach(link => {
-                        // Sanitize link text (basic example)
                         const sanitizedText = link.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
                         linksHtml += `<li><a href="${link.url}" target="_blank">${sanitizedText}</a></li>`;
                     });
@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function fileToBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.readAsDataURL(file); // Reads the file as a data URL (base64 encoded)
+            reader.readAsDataURL(file);
             reader.onload = () => resolve(reader.result);
             reader.onerror = error => reject(error);
         });
