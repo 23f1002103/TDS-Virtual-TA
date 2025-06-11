@@ -1,8 +1,8 @@
 import os
 import base64
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-# from langchain_community.vectorstores import Chroma # <--- REMOVE THIS
-from langchain_pinecone import PineconeVectorStore # <--- ADD THIS (or for your chosen DB)
+# from langchain_community.vectorstores import Chroma
+from langchain_pinecone import PineconeVectorStore
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage
@@ -11,8 +11,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuration ---
-# REMOVE VECTOR_DB_DIR = "chroma_db"
-
 # New Pinecone (or other vector DB) specific configurations
 # You'll get these from your Pinecone dashboard
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
@@ -43,12 +41,13 @@ Answer:""",
 
 _qa_chain = None
 _llm = None
+_retriever = None # Added to store retriever instance
 
 def initialize_rag_components():
-    global _qa_chain, _llm
+    global _qa_chain, _llm, _retriever
 
     if _qa_chain is not None:
-        return _qa_chain, _llm
+        return _qa_chain, _llm, _retriever # Return retriever too
 
     print(f"⏳ Initializing Google embedding model: {GOOGLE_EMBEDDING_MODEL}...")
     try:
@@ -79,17 +78,74 @@ def initialize_rag_components():
     except Exception as e:
         raise RuntimeError(f"Error initializing Google LLM: {e}. Check GOOGLE_API_KEY and internet connection.")
 
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+    _retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
     _qa_chain = RetrievalQA.from_chain_type(
         llm=_llm,
         chain_type="stuff",
-        retriever=retriever,
+        retriever=_retriever, # Use _retriever here
         return_source_documents=True,
         chain_type_kwargs={"prompt": CUSTOM_QA_PROMPT}
     )
 
-    return _qa_chain, _llm, retriever
+    return _qa_chain, _llm, _retriever # Return retriever here as well
 
-# ... (rest of query_rag_system and if __name__ == "__main__" remains similar,
-#      but the __main__ part for creating the index would be a separate script)
+
+def query_rag_system(question: str, image_data_base64: str = None): # Parameter name changed
+    """
+    Queries the RAG system with a given question and optional image.
+    """
+    global _qa_chain, _llm, _retriever
+
+    if _qa_chain is None:
+        _qa_chain, _llm, _retriever = initialize_rag_components() # Initialize if not already
+
+    # This part needs to be carefully integrated if your LLM needs the image
+    # for answering. A standard RetrievalQA chain typically works on text context.
+    # For now, we'll ensure the function passes the question to the RAG chain.
+    # If the LLM itself is multimodal and you want to pass the image directly to it,
+    # you might need to modify _qa_chain or call _llm.invoke() directly with
+    # multimodal input.
+    if image_data_base64:
+        print("Image attachment detected in query_rag_system. Note: Current RAG chain primarily handles text retrieval.")
+        # If you needed to truly use the image with the LLM in a multimodal way,
+        # you'd restructure how _llm is called within the chain or directly.
+        # Example for direct LLM call with image (if _llm supports it):
+        # image_message = {
+        #     "type": "image_url",
+        #     "image_url": {"url": f"data:image/jpeg;base64,{image_data_base64}"}
+        # }
+        # text_message = {"type": "text", "text": question}
+        # response_from_llm = _llm.invoke([HumanMessage(content=[text_message, image_message])])
+        # return {"answer": response_from_llm.content, "source_documents": []} # No source docs from direct LLM call
+        pass # For now, we continue with text-based RAG
+
+    print(f"Querying RAG system with question: {question}")
+
+    # Use the initialized RetrievalQA chain to get an answer
+    response = _qa_chain.invoke({"query": question})
+
+    answer = response.get("result")
+    source_documents = response.get("source_documents", [])
+
+    return {
+        "answer": answer,
+        "source_documents": [{"page_content": doc.page_content, "metadata": doc.metadata} for doc in source_documents]
+    }
+
+# This section is typically for local testing or initial index population
+# if __name__ == "__main__":
+#     # This part should ideally be in a separate script (e.g., create_index.py)
+#     # if you need to run it only once to set up your Pinecone index.
+#     # It's not part of the FastAPI application's runtime.
+
+#     # Example of how you might test initialize and query locally:
+#     print("Running local test for RAG pipeline...")
+#     qa_chain_test, llm_test, retriever_test = initialize_rag_components()
+#     print("RAG components initialized.")
+
+#     test_question = "What is the capital of France?"
+#     test_response = query_rag_system(question=test_question)
+#     print(f"Question: {test_question}")
+#     print(f"Answer: {test_response['answer']}")
+#     print("Source Documents:", test_response['source_documents'])
