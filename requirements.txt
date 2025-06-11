@@ -5,4 +5,5 @@ uvicorn
 python-dotenv
 langchain-google-genai
 langchain
-langchain-community
+langchain-communitypinecone-client
+langchain-pinecone
