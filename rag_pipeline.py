@@ -7,7 +7,7 @@ from langchain.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 from pinecone import Pinecone
-import json # Import json for serialization utility
+# import json # No longer explicitly needed for serialize_value, but keep if used elsewhere
 
 load_dotenv()
 
@@ -71,43 +71,6 @@ def initialize_rag_retriever_only():
     return _retriever
 
 
-def serialize_value(value):
-    """
-    Recursively converts problematic types (like protobuf Repeated) to serializable forms.
-    This helps ensure metadata is JSON-compatible.
-    """
-    if isinstance(value, (list, tuple)):
-        return [serialize_value(item) for item in value]
-    if isinstance(value, dict):
-        return {k: serialize_value(v) for k, v in value.items()}
-    
-    # Heuristic for protobuf Repeated and other non-standard iterable types
-    # This specifically targets objects that behave like lists but aren't standard Python lists
-    if hasattr(value, '__iter__') and not isinstance(value, (str, bytes)):
-        try:
-            return [serialize_value(item) for item in list(value)]
-        except TypeError: # If it's iterable but cannot be converted to list (e.g., generator)
-            return str(value)
-    
-    # More direct check for protobuf objects if 'DESCRIPTOR' attribute is present
-    # and the type name suggests it's a Repeated field
-    if hasattr(value, 'DESCRIPTOR') and 'Repeated' in str(type(value)):
-        return [serialize_value(item) for item in list(value)]
-
-    # Attempt to convert to string if it's a type that's generally not JSON serializable
-    # but doesn't fit the above categories (e.g., custom objects, specific enums etc.)
-    try:
-        # Try a round-trip through JSON to confirm serializability for common types
-        # This will fail if the value itself isn't directly serializable
-        json.dumps(value)
-        return value
-    except (TypeError, OverflowError): # OverflowError for very large ints not fitting JSON spec
-        return str(value) # Fallback to string representation
-
-    # If it passes all checks, return as is
-    return value
-
-
 def query_rag_system(question: str, image_data_base64: str = None, qa_chain_instance=None):
     """
     Queries the RAG system with a given question and optional image.
@@ -130,9 +93,26 @@ def query_rag_system(question: str, image_data_base64: str = None, qa_chain_inst
     # Process source_documents to ensure metadata is fully serializable
     cleaned_source_documents = []
     for doc in source_documents:
+        cleaned_metadata = {}
+        if doc.metadata:
+            for k, v in doc.metadata.items():
+                # Explicitly convert any non-primitive value to string for serialization safety
+                if isinstance(v, (str, int, float, bool, type(None))):
+                    cleaned_metadata[k] = v
+                elif isinstance(v, (list, tuple)):
+                    # For lists/tuples, convert each item to string
+                    cleaned_metadata[k] = [str(item) for item in v]
+                elif isinstance(v, dict):
+                    # For nested dictionaries, recursively convert values to string
+                    # This handles one level of nesting robustly, assuming deeper levels are rare or can be stringified
+                    cleaned_metadata[k] = {sub_k: str(sub_v) if not isinstance(sub_v, (str, int, float, bool, type(None))) else sub_v for sub_k, sub_v in v.items()}
+                else:
+                    # Catch-all: Convert any other complex object (like protobuf Repeated) to string
+                    cleaned_metadata[k] = str(v)
+        
         cleaned_source_documents.append({
             "page_content": doc.page_content,
-            "metadata": serialize_value(doc.metadata) # Apply the serialization function
+            "metadata": cleaned_metadata
         })
 
     return {
