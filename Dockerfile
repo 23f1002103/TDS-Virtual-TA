@@ -24,4 +24,4 @@ ENV PORT 8080
 # Command to run your FastAPI application with Uvicorn
 # --host 0.0.0.0 is crucial for containerized apps to listen on all available network interfaces
 # api:app refers to the 'app' object in 'api.py'
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "$(PORT)"]
+CMD uvicorn api:app --host 0.0.0.0 --port $PORT
