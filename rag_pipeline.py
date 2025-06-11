@@ -1,13 +1,13 @@
 import os
 import base64
-from langchain_google_genai import GoogleGenerativeAIEmbeddings # Remove ChatGoogleGenerativeAI from here
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
-
 from pinecone import Pinecone
+import json # Import json for serialization utility
 
 load_dotenv()
 
@@ -38,14 +38,12 @@ Answer:""",
     input_variables=["context", "question"],
 )
 
-# _qa_chain = None # This will now be initialized by the returned retriever and LLM from startup_event
-# _llm = None      # LLM moved to api.py startup
-_retriever = None # Keep this global for now, or pass it around
+_retriever = None
 
-def initialize_rag_retriever_only(): # Renamed the function
+def initialize_rag_retriever_only():
     global _retriever
 
-    if _retriever is not None: # Check if retriever is already initialized
+    if _retriever is not None:
         return _retriever
 
     print(f"⏳ Initializing Google embedding model: {GOOGLE_EMBEDDING_MODEL}...")
@@ -70,10 +68,47 @@ def initialize_rag_retriever_only(): # Renamed the function
 
     _retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
     
-    return _retriever # Only return the retriever now
+    return _retriever
 
 
-def query_rag_system(question: str, image_data_base64: str = None, qa_chain_instance=None): # Added qa_chain_instance
+def serialize_value(value):
+    """
+    Recursively converts problematic types (like protobuf Repeated) to serializable forms.
+    This helps ensure metadata is JSON-compatible.
+    """
+    if isinstance(value, (list, tuple)):
+        return [serialize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {k: serialize_value(v) for k, v in value.items()}
+    
+    # Heuristic for protobuf Repeated and other non-standard iterable types
+    # This specifically targets objects that behave like lists but aren't standard Python lists
+    if hasattr(value, '__iter__') and not isinstance(value, (str, bytes)):
+        try:
+            return [serialize_value(item) for item in list(value)]
+        except TypeError: # If it's iterable but cannot be converted to list (e.g., generator)
+            return str(value)
+    
+    # More direct check for protobuf objects if 'DESCRIPTOR' attribute is present
+    # and the type name suggests it's a Repeated field
+    if hasattr(value, 'DESCRIPTOR') and 'Repeated' in str(type(value)):
+        return [serialize_value(item) for item in list(value)]
+
+    # Attempt to convert to string if it's a type that's generally not JSON serializable
+    # but doesn't fit the above categories (e.g., custom objects, specific enums etc.)
+    try:
+        # Try a round-trip through JSON to confirm serializability for common types
+        # This will fail if the value itself isn't directly serializable
+        json.dumps(value)
+        return value
+    except (TypeError, OverflowError): # OverflowError for very large ints not fitting JSON spec
+        return str(value) # Fallback to string representation
+
+    # If it passes all checks, return as is
+    return value
+
+
+def query_rag_system(question: str, image_data_base64: str = None, qa_chain_instance=None):
     """
     Queries the RAG system with a given question and optional image.
     Requires an initialized qa_chain_instance to be passed.
@@ -87,12 +122,20 @@ def query_rag_system(question: str, image_data_base64: str = None, qa_chain_inst
 
     print(f"Querying RAG system with question: {question}")
 
-    response = qa_chain_instance.invoke({"query": question}) # Use the passed instance
+    response = qa_chain_instance.invoke({"query": question})
 
     answer = response.get("result")
     source_documents = response.get("source_documents", [])
 
+    # Process source_documents to ensure metadata is fully serializable
+    cleaned_source_documents = []
+    for doc in source_documents:
+        cleaned_source_documents.append({
+            "page_content": doc.page_content,
+            "metadata": serialize_value(doc.metadata) # Apply the serialization function
+        })
+
     return {
         "answer": answer,
-        "source_documents": [{"page_content": doc.page_content, "metadata": doc.metadata} for doc in source_documents]
+        "source_documents": cleaned_source_documents
     }
