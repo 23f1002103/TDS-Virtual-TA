@@ -5,5 +5,5 @@ uvicorn
 python-dotenv
 langchain-google-genai
 langchain
-# chromadb (removed or commented out if not strictly needed)               # <--- NEW ADDITION (if you're using ChromaDB as your vector store)
-# Add any other libraries your project imports (e.g., if you're using text processing like NLTK, or data handling like pandas/numpy)
+chromadb
+langchain-community # <--- ADD THIS LINE
