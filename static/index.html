@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TDS Virtual TA Chatbot</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>TDS Virtual TA</h1>
+            <p>Your AI assistant for Tools in Data Science.</p>
+        </div>
+        <div class="chat-history" id="chatHistory">
+            <div class="chat-message ta">Hello! How can I help you with the Tools in Data Science course today?</div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="questionInput" placeholder="Ask a question..." autofocus>
+            <input type="file" id="imageInput" accept="image/*">
+            <button id="sendButton">Send</button>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
