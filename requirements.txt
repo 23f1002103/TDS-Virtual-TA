@@ -1,4 +1,4 @@
-langchain-google-generativeai
+langchain-google-generativeai==0.0.35
 beautifulsoup4
 markdownify
 fastapi
