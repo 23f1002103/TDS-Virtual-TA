@@ -1,25 +1,25 @@
 {
   "builds": [
     {
-      "src": "api/*.py",
+      "src": "api.py",
       "use": "@vercel/python",
       "config": {
         "runtime": "python3.9"
       }
-    },
-    {
-      "src": "static/**", 
-      "use": "@vercel/static-build" 
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "dest": "api.py"
     },
     {
-      "src": "/(.*)", 
-      "dest": "/static/$1" 
+      "src": "/static/(.*)",
+      "dest": "/static/$1"
+    },
+    {
+      "src": "/",
+      "dest": "/static/index.html"
     }
   ]
 }
