@@ -1,9 +1,10 @@
-langchain-google-generativeai
+langchain-google-generativeai==0.1.0
 beautifulsoup4
 markdownify
 fastapi
 uvicorn
 python-dotenv
 langchain
+langchain-community # Add this line
 pinecone-client
 langchain-pinecone
