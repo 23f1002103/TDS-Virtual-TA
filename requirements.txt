@@ -1,11 +1,9 @@
-playwright
 beautifulsoup4
 markdownify
 fastapi
 uvicorn
-python-dotenv # If you use .env files locally
-# Add any other libraries your project imports (e.g., google-generativeai, langchain, etc.)
-langchain-google-genai  # <--- NEW ADDITION
-langchain               # <--- NEW ADDITION (likely needed by langchain-google-genai)
-chromadb                # <--- NEW ADDITION (if you're using ChromaDB as your vector store)
+python-dotenv
+langchain-google-genai
+langchain
+# chromadb (removed or commented out if not strictly needed)               # <--- NEW ADDITION (if you're using ChromaDB as your vector store)
 # Add any other libraries your project imports (e.g., if you're using text processing like NLTK, or data handling like pandas/numpy)
